@@ -1,0 +1,175 @@
+1	#ifndef PLIST_H
+2	#define PLIST_H
+3	
+4	#include <stddef.h> /* size_t */
+5	
+6	/*
+7	   PList — API de liste dynamique de Process (interface uniquement).
+8	
+9	   Conventions du module
+10	   - Codes de retour: 0 = succes, -1 = erreur (uniforme sur tout le module).
+11	   - Pointeurs NULL: voir chaque prototype; les fonctions void sont des no-op
+12	     si pl == NULL (ne plantent pas).
+13	   - Responsabilite memoire: l'appelant doit appeler plist_init() avant usage
+14	     et plist_free() en fin de vie. Les allocations internes sont liberees par
+15	     plist_free().
+16	   - Thread-safety: non thread-safe par defaut (pas de synchronisation interne).
+17	
+18	   Debug/Assertions (optionnel)
+19	   - Il est recommande d'activer des assertions en debug pour verifier les
+20	     invariants (via <assert.h>). Aucune assertion n'est imposee par l'API.
+21	*/
+22	
+23	/*
+24	   API de liste dynamique de Process (interface uniquement).
+25	
+26	   Contrats généraux:
+27	   - Toutes les fonctions retournent 0 en cas de succès et une valeur négative
+28	     (-1) en cas d'erreur lorsqu'un code de retour existe.
+29	   - Toute fonction recevant un pointeur documente le comportement si celui-ci
+30	     vaut NULL (voir chaque prototype).
+31	   - Aucune implémentation ici: seules les signatures sont déclarées.
+32	   - Responsabilité mémoire: l'appelant initialise et libère la liste via
+33	     plist_init() et plist_free(). Les éventuelles allocations internes au
+34	     conteneur sont libérées par plist_free().
+35	*/
+36	
+37	
+38	/* Invariants PList (doivent toujours etre vrais):
+39	   - data == NULL <=> size == 0 && capacity == 0
+40	   - size <= capacity
+41	   - capacity == 0 => data == NULL
+42	*/
+43	typedef struct Process Process;
+44	
+45	typedef struct {
+46	    Process *data;  /* zone de stockage des éléments (peut être NULL si vide) */
+47	    size_t   size;  /* nombre d'éléments actuellement stockés */
+48	    size_t   capacity; /* capacité allouée (en éléments) */
+49	} PList;
+50	
+51	/*
+52	   plist_init
+53	   Paramètres:
+54	   - pl: pointeur valide sur une structure PList à initialiser.
+55	     Si pl == NULL: aucun effet (contrat: la fonction ne plante pas).
+56	   Retour:
+57	   - Aucun (void).
+58	   Effets de bord:
+59	   - Met la liste dans un état vide utilisable: data=NULL, size=0, capacity=0.
+60	   Complexité:
+61	   - O(1).
+62	*/
+63	void plist_init(PList *pl);
+64	/* Details:
+65	   - Preconditions: pl peut etre NULL.
+66	   - Postconditions (si pl != NULL): data=NULL, size=0, capacity=0.
+67	   - Retour: void; no-op si pl == NULL.
+68	   - Erreurs: aucune.
+69	*/
+70	
+71	/*
+72	   plist_clear
+73	   Paramètres:
+74	   - pl: pointeur valide sur une PList.
+75	     Si pl == NULL: aucun effet.
+76	   Retour:
+77	   - Aucun (void).
+78	   Effets de bord:
+79	   - Remet la taille à 0 mais ne libère pas la zone (capacity inchangée).
+80	   Complexité:
+81	   - O(1).
+82	*/
+83	void plist_clear(PList *pl);
+84	/* Details:
+85	   - Preconditions: pl peut etre NULL.
+86	   - Postconditions (si pl != NULL): size=0; data/capacity inchanges.
+87	   - Retour: void; no-op si pl == NULL.
+88	   - Erreurs: aucune.
+89	*/
+90	
+91	/*
+92	   plist_free
+93	   Paramètres:
+94	   - pl: pointeur valide sur une PList.
+95	     Si pl == NULL: aucun effet.
+96	   Retour:
+97	   - Aucun (void).
+98	   Effets de bord:
+99	   - Libère la zone interne si nécessaire et remet la liste à l'état initial
+100	     (équivalent à { data=NULL, size=0, capacity=0 }).
+101	   Complexité:
+102	   - O(1) pour l'opération elle-même (hors coût de libération mémoire).
+103	*/
+104	void plist_free(PList *pl);
+105	/* Details:
+106	   - Preconditions: pl peut etre NULL.
+107	   - Postconditions (si pl != NULL): data liberee si non NULL; data=NULL,
+108	     size=0, capacity=0 (etat initial). Idempotente.
+109	   - Retour: void; no-op si pl == NULL.
+110	   - Erreurs: aucune (free(NULL) sans effet).
+111	*/
+112	
+113	/*
+114	   plist_push
+115	   Paramètres:
+116	   - pl: pointeur valide vers la PList de destination.
+117	   - p: pointeur valide vers le Process à copier.
+118	     Si pl == NULL ou p == NULL: échec.
+119	   Retour:
+120	   - 0 en cas de succès, -1 en cas d'argument invalide ou d'échec d'allocation.
+121	   Effets de bord:
+122	   - Ajoute une copie de *p à la fin de la liste; peut réallouer la zone.
+123	   Complexité:
+124	   - Amortie O(1) après réallocation (stratégie de croissance non exposée ici).
+125	*/
+126	int plist_push(PList *pl, const Process *p);
+127	/* Details:
+128	   - Preconditions: pl != NULL, p != NULL.
+129	   - Postconditions (si succes): *p est copie a la fin; peut reallouer.
+130	     En cas d'echec d'allocation: -1 est retourne et la liste reste inchangee.
+131	   - Retour: 0 si succes; -1 si argument invalide ou echec d'allocation.
+132	   - Erreurs typiques: pl==NULL, p==NULL, malloc/realloc a echoue.
+133	*/
+134	
+135	/*
+136	   plist_get
+137	   Paramètres:
+138	   - pl: pointeur valide vers la PList source.
+139	   - idx: indice de l'élément à lire (0 <= idx < size).
+140	   - out: pointeur valide où écrire la copie de l'élément.
+141	     Si pl == NULL, out == NULL, ou idx hors bornes: échec.
+142	   Retour:
+143	   - 0 si OK, -1 si hors bornes ou pointeur invalide.
+144	   Effets de bord:
+145	   - Aucun (ne modifie pas la liste).
+146	   Complexité:
+147	   - O(1).
+148	*/
+149	int plist_get(const PList *pl, size_t idx, Process *out);
+150	/* Details:
+151	   - Preconditions: pl != NULL, out != NULL, 0 <= idx < pl->size.
+152	   - Postconditions (si succes): *out recoit une copie de l'element idx.
+153	     En cas d'erreur, *out n'est pas modifiee.
+154	   - Retour: 0 si succes; -1 si pointeur invalide ou idx hors bornes.
+155	*/
+156	
+157	/*
+158	   plist_size (optionnel)
+159	   Paramètres:
+160	   - pl: pointeur vers la PList.
+161	     Si pl == NULL: retourne 0.
+162	   Retour:
+163	   - Taille courante de la liste (nombre d'éléments).
+164	   Effets de bord:
+165	   - Aucun.
+166	   Complexité:
+167	   - O(1).
+168	*/
+169	size_t plist_size(const PList *pl);
+170	/* Details:
+171	   - Preconditions: pl peut etre NULL.
+172	   - Retour: taille courante (0 si pl == NULL).
+173	*/
+174	
+175	#endif /* PLIST_H */
